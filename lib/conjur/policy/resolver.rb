@@ -131,15 +131,15 @@ module Conjur
     #
     # A Relative path is allowed only on:
     #
-    # * The +member+ of a Grant
-    # * The +role+ of a Permit.
+    # * The +member+ of a Grant and Revoke
+    # * The +role+ of a Permit and Deny.
     # * Any +owner+.
     # * Any annotation value.
     class RelativePathResolver < PolicyTraversal
       def resolve_record record, visited
         resolve_owner record if record.respond_to?(:owner)
-        resolve_grant record if record.is_a?(Types::Grant)
-        resolve_permit record if record.is_a?(Types::Permit)
+        resolve_member record if resolve_member? record
+        resolve_role record if resolve_role? record
         resolve_annotations record if record.respond_to?(:annotations)
 
         super
@@ -149,13 +149,18 @@ module Conjur
         record.owner.id = absolute_path_of(record.owner.id) if record.owner && record.owner.id
       end
 
-      def resolve_grant record
+      def resolve_member record
         Array(record.member).each do |member|
-          member.role.id = absolute_path_of(member.role.id)
+          # Member has either role.id or id
+          if member.respond_to? :role
+            member.role.id = absolute_path_of(member.role.id)
+          else
+            member.id = absolute_path_of(member.id)
+          end
         end
       end
 
-      def resolve_permit record
+      def resolve_role record
         Array(record.role).each do |role|
           role.id = absolute_path_of(role.id)
         end
@@ -168,6 +173,14 @@ module Conjur
             annotations[k] = absolute_path_of([record.id, v].join('/'))
           end
         end
+      end
+
+      def resolve_member? record
+        record.is_a?(Types::Grant) || record.is_a?(Types::Revoke)
+      end
+
+      def resolve_role? record
+        record.is_a?(Types::Permit) || record.is_a?(Types::Deny)
       end
 
       # Resolve paths starting with '/' as an absolute path by stripping the leading character.
